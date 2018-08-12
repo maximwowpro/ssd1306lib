@@ -340,7 +340,6 @@ OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to,
 	if (params > (OLED_BLACK | OLED_FILL))
 		return OLED_EPARAMS;
 	bool pixel_color = (OLED_BLACK & params) != 0;
-	bool is_fill = (OLED_FILL & params) != 0;
 	
 	/* Limit coordinates to display bounds */
 	uint8_t size_errors_x = 0;
@@ -416,7 +415,7 @@ OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to,
 		return OLED_EOK;
 	} else if (stop_x - start_x == stop_y - start_y) {	/* situation_1 handler */
 		uint8_t x = start_x, y = start_y;
-		for (; x <= stop_x, y <= stop_y; x++, y++)
+		for (; x <= stop_x && y <= stop_y; x++, y++)
 				OLED_put_pixel_(oled, x, y, pixel_color);
 		return OLED_EOK;
 	}
@@ -446,7 +445,8 @@ OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to,
 	/* In the matrix-like display we can't draw inclined line, 
 	 * but we can represent it in the form of stairs, 
 	 * which will approximated to inclined line by human's vision.
-	 * num_lines is a number of this stairs.
+	 * num_lines is a number of this stairs (6 in Example).
+	 * num_lines = delta_small
 	 * Example:
 	 * 000000
 	 *       000000
@@ -456,8 +456,6 @@ OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to,
 	 * 		                00000
 	 * is approximated form of inclined line.
 	 */
-	
-	uint8_t num_lines = delta_small;
 	
 	/* There can be 2 situations:
 	 * - delta_big % delta_small == 0
@@ -580,5 +578,86 @@ OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to,
 				return OLED_EOK;
 		}
 	}
+	return OLED_EOK;
+}
+
+
+
+OLED_err OLED_put_triangle(OLED *oled, uint8_t point_1_x, uint8_t point_1_y, uint8_t point_2_x, uint8_t point_2_y, 
+			   uint8_t point_3_x, uint8_t point_3_y, enum OLED_params params)
+{
+	if (params > (OLED_BLACK | OLED_FILL))
+		return OLED_EPARAMS;
+	bool pixel_color = (OLED_BLACK & params) != 0;
+	bool is_fill = (OLED_FILL & params) != 0;
 	
+	if (false == is_fill) {
+		OLED_WITH_SPINLOCK(&oled) {
+		OLED_put_line(oled, point_1_x, point_1_y, point_2_x, point_2_y, params);
+		OLED_put_line(oled, point_2_x, point_2_y, point_3_x, point_3_y, params);
+		OLED_put_line(oled, point_3_x, point_3_y, point_1_x, point_1_y, params);
+		}
+		return OLED_EOK;
+	}
+	
+	/* Now fill the triangle.
+	 * Firstly, create the rectangle, which contains our triangle .
+	 * Search left, right, top and bottom sides of rectangle.
+	 */
+	uint8_t right = 0, left = 0, top = 0, bottom = 0;
+	if (point_1_x <= point_2_x && point_1_x <= point_3_x)
+		left = point_1_x;
+	else if (point_2_x <= point_1_x && point_2_x <= point_3_x)
+		left = point_2_x;
+	else if (point_3_x <= point_1_x && point_3_x <= point_2_x)
+		left = point_3_x;
+	
+	if (point_1_x >= point_2_x && point_1_x >= point_3_x)
+		right = point_1_x;
+	else if (point_2_x >= point_1_x && point_2_x >= point_3_x)
+		right = point_2_x;
+	else if (point_3_x >= point_1_x && point_3_x >= point_2_x)
+		right = point_3_x;
+	
+	if (point_1_y <= point_2_y && point_1_y <= point_3_y)
+		top = point_1_y;
+	else if (point_2_y <= point_1_y && point_2_y <= point_3_y)
+		top = point_2_y;
+	else if (point_3_y <= point_1_y && point_3_y <= point_2_y)
+		top = point_3_y;
+	
+	if (point_1_y >= point_2_y && point_1_y >= point_3_y)
+		bottom = point_1_y;
+	else if (point_2_y >= point_1_y && point_2_y >= point_3_y)
+		bottom = point_2_y;
+	else if (point_3_y >= point_1_y && point_3_y >= point_2_y)
+		bottom = point_3_y;
+	
+	/* Now fill the triangle.
+	 * For each point(pixel) identify is it inside or outside the triangle
+	 * using formulas.
+	 * Read about this formulas:
+	 * http://www.abakbot.ru/online-2/280-pointreug
+	 * http://www.cyberforum.ru/algorithms/thread144722.html
+	 * http://www.cyberforum.ru/mathematics/thread8234.html
+	 */
+	for (uint8_t y = top; y <= bottom; y++) {
+		for (uint8_t x = left; x <= right; x++) {
+			int16_t r1 = (point_1_x - x) * (point_2_y - point_1_y) - (point_2_x - point_1_x) * (point_1_y - y);
+			int16_t r2 = (point_2_x - x) * (point_3_y - point_2_y) - (point_3_x - point_2_x) * (point_2_y - y);
+			int16_t r3 = (point_3_x - x) * (point_1_y - point_3_y) - (point_1_x - point_3_x) * (point_3_y - y);
+			
+			/* the point is over the side of triangle */
+			if (0 == r1 * r2 * r3)
+				continue;
+			/* the point is inside the triangle, fill it */
+			if ( (r1 < 0 && r2 < 0 && r3 < 0) || (r1 > 0 && r2 > 0 && r3 > 0) ) {
+				OLED_WITH_SPINLOCK(&oled) {
+					OLED_put_pixel(oled, x, y, pixel_color);
+				}
+			}
+		}
+	}
+
+	return OLED_EOK;
 }

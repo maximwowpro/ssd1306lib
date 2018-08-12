@@ -283,3 +283,11 @@ OLED_err OLED_put_rectangle(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t 
  * (!) Notice: method is not atomic. If required, protect it with lock
  */
 OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to, uint8_t y_to, enum OLED_params params);
+
+
+/* OLED_put_triangle() - puts a triangle at specified coordinates
+ * 
+ * (!) Notice: method is atomic.
+ */
+OLED_err OLED_put_triangle(OLED *oled, uint8_t point_1_x, uint8_t point_1_y, uint8_t point_2_x, uint8_t point_2_y, 
+			   uint8_t point_3_x, uint8_t point_3_y, enum OLED_params params);
