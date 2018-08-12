@@ -333,3 +333,252 @@ OLED_err OLED_put_rectangle(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t 
 
 	return OLED_EOK;
 }
+
+
+OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to, uint8_t y_to, enum OLED_params params)
+{
+	if (params > (OLED_BLACK | OLED_FILL))
+		return OLED_EPARAMS;
+	bool pixel_color = (OLED_BLACK & params) != 0;
+	bool is_fill = (OLED_FILL & params) != 0;
+	
+	/* Limit coordinates to display bounds */
+	uint8_t size_errors_x = 0;
+	uint8_t size_errors_y = 0;
+	uint8_t w_max = oled->width - 1;
+	uint8_t h_max = oled->height - 1;
+	if (x_from > w_max) {
+		x_from = w_max;
+		size_errors_x++;
+	}
+	if (x_to > w_max) {
+		x_to = w_max;
+		size_errors_x++;
+	}
+	if (y_from > h_max) {
+		y_from = h_max;
+		size_errors_y++;
+	}
+	if (y_to > h_max) {
+		y_to = h_max;
+		size_errors_y++;
+	}
+	/* If we can't draw the line at display */
+	if (size_errors_x >= 2 || size_errors_y >= 2 )
+		return OLED_EBOUNDS;
+	
+
+	/* Work with coordinates:
+	 * 
+	* There may be 4 situations:
+	* 1) start - top    left  ; end - bottom right
+	* 2) start - bottom right ; end - top    left
+	* 3) start - top    right ; end - bottom left
+	* 4) start - bottom left  ; end - top    right
+	*/
+
+	uint8_t start_x = x_from; 
+	uint8_t start_y = y_from; 
+	uint8_t stop_x = x_to;     
+	uint8_t stop_y = y_to;    
+	
+	/* This code has handlers only for situation_1 and situation_4, so
+	 * if we have situation_2 or situation_3 - convert them to situation_1 or situation_4 
+	 */
+	if ( (x_from >= x_to && y_from >= y_to)
+	  || (x_from >  x_to && y_from <  y_to) ) {
+		start_x = x_to;
+		start_y = y_to;
+		stop_x = x_from;
+		stop_y = y_from;
+	}
+	
+	/* If the line is horizontal */
+	if (start_y == stop_y) {
+		for (uint8_t x = start_x; x <= stop_x; x++)
+			OLED_put_pixel_(oled, x, start_y, pixel_color);
+		return OLED_EOK;
+	}
+	
+	/* If the line is vertical */
+	if (start_x == stop_x) {
+		for (uint8_t y = start_y; y <= stop_y; y++)
+			OLED_put_pixel_(oled, start_x, y, pixel_color);
+		return OLED_EOK;
+	}
+
+	/* If the line is  45-degrees inclined line */
+	if ( (stop_x - start_x == start_y - stop_y)
+	  && (start_x < stop_x && start_y > stop_y) ) {		/* situation_4 handler */
+		uint8_t x = start_x, y = start_y;
+		for (; x <= stop_x; x++, y--)
+			OLED_put_pixel_(oled, x, y, pixel_color);
+		return OLED_EOK;
+	} else if (stop_x - start_x == stop_y - start_y) {	/* situation_1 handler */
+		uint8_t x = start_x, y = start_y;
+		for (; x <= stop_x, y <= stop_y; x++, y++)
+				OLED_put_pixel_(oled, x, y, pixel_color);
+		return OLED_EOK;
+	}
+	
+	/* If the line is inclined in NOT 45 degrees*/
+	uint8_t delta_small = 0;
+	uint8_t delta_big   = 0;
+	
+	if (start_x < stop_x && start_y < stop_y) { 	  	/* situation_1 handler */
+		if (stop_x - start_x > stop_y - start_y) {
+			delta_big = stop_x - start_x;
+			delta_small = stop_y - start_y;
+		} else if (stop_x - start_x < stop_y - start_y) {
+			delta_big = stop_y - start_y;
+			delta_small = stop_x - start_x;
+		}
+	} else if (start_x < stop_x && start_y > stop_y) { 	/* situation_4 handler */
+		if (stop_x - start_x > start_y - stop_y) {
+			delta_big = stop_x - start_x;
+			delta_small = start_y - stop_y;
+		} else if (stop_x - start_x < start_y - stop_y) {
+			delta_big = start_y - stop_y;
+			delta_small = stop_x - start_x;
+		}
+	}
+	
+	/* In the matrix-like display we can't draw inclined line, 
+	 * but we can represent it in the form of stairs, 
+	 * which will approximated to inclined line by human's vision.
+	 * num_lines is a number of this stairs.
+	 * Example:
+	 * 000000
+	 *       000000
+	 * 	       00000
+	 * 	            000000
+	 * 		          000000
+	 * 		                00000
+	 * is approximated form of inclined line.
+	 */
+	
+	uint8_t num_lines = delta_small;
+	
+	/* There can be 2 situations:
+	 * - delta_big % delta_small == 0
+	 * - delta_big % delta_small != 0
+	 * In the first case the lenght of every line (stair) == delta_big / delta_small.
+	 */
+	uint8_t line_lenght = delta_big / delta_small; /* line_lenght means short_line lenght */
+	
+	/* Now we work with first case (delta_big % delta_small == 0) */
+	if (delta_big % delta_small == 0) {
+		if (start_x < stop_x && start_y < stop_y) { 	  	/* situation_1 handler */
+			if (delta_small == stop_x - start_x) {
+				uint8_t x = 0, y = 0;
+				for (; y <= delta_big; y++) {
+					if (0 == y % line_lenght)
+						x++;
+					OLED_put_pixel_(oled, start_x + x, start_y + y, pixel_color);
+				}
+				return OLED_EOK;
+			}
+			if (delta_small == stop_y - start_y) {
+				uint8_t x = 0, y = 0;
+				for (; x <= delta_big; x++) {
+					if (0 == x % line_lenght)
+						y++;
+					OLED_put_pixel_(oled, start_x + x, start_y + y, pixel_color);
+				}
+				return OLED_EOK;
+			}
+		} else if (start_x < stop_x && start_y > stop_y) { 	/* situation_4 handler */
+			if (delta_small == stop_x - start_x) {
+				uint8_t x = 0, y = 0;
+				for (; y <= delta_big; y++) {
+					if (0 == y % line_lenght)
+						x++;
+					OLED_put_pixel_(oled, start_x + x, start_y - y, pixel_color);
+				}
+				return OLED_EOK;
+			}
+			if (delta_small == start_y - stop_y) {
+				uint8_t x = 0, y = 0;
+				for (; x <= delta_big; x++) {
+					if (0 == x % line_lenght)
+						y++;
+					OLED_put_pixel_(oled, start_x + x, start_y - y, pixel_color);
+				}
+				return OLED_EOK;
+			}
+		}
+	}
+	
+	/* Now we work with second case (delta_big % delta_small != 0)
+	 * In the second case we will have lines with two different lenghts:
+	 * - short_line lenght = delta_big / delta_small
+	 * - long_line  lenght = delta_big / delta_small + 1
+	 * Number of long_lines can be counted by such formula:
+	 * num_long_lines = delta_big % delta_small
+	 *
+	 * Next we should determine when we must draw short_line and when long_line.
+	 * long_line_pos is a line(stair) position on which we should draw short_line.
+	 * the condition of drawing short_line is:
+	 * if (0 == current_line_position % long_line_pos)
+	 * For this stuff I use such formula:
+	 * long_line_pos = delta_small / (delta_small - (delta_big % delta_small))
+	 */
+	uint8_t long_line_pos = delta_small / (delta_small - (delta_big % delta_small));
+	
+	if (start_x < stop_x && start_y < stop_y) { 	  	/* situation_1 handler */
+		if (delta_small == stop_x - start_x) {
+			uint8_t x = 0, y = 0;
+			for (; y < delta_big; y++) {
+				if (0 == y % line_lenght)
+					x++;
+				if (0 == (x + 1) % long_line_pos) {
+					OLED_put_pixel_(oled, start_x + x, start_y + y, pixel_color);
+					y++;
+				}
+				OLED_put_pixel_(oled, start_x + x, start_y + y, pixel_color);
+			}
+				return OLED_EOK;
+		}
+		if (delta_small == stop_y - start_y) {
+			uint8_t x = 0, y = 0;
+			for (; x < delta_big; x++) {
+				if (0 == x % line_lenght)
+					y++;
+				if (0 == (y + 1) % long_line_pos) {
+					OLED_put_pixel_(oled, start_x + x, start_y + y, pixel_color);
+					x++;
+				}
+				OLED_put_pixel_(oled, start_x + x, start_y + y, pixel_color);
+			}
+				return OLED_EOK;
+		}
+	} else if (start_x < stop_x && start_y > stop_y) { 	/* situation_4 handler */
+		if (delta_small == stop_x - start_x) {
+			uint8_t x = 0, y = 0;
+			for (; y < delta_big; y++) {
+				if (0 == y % line_lenght)
+					x++;
+				if (0 == (x + 1) % long_line_pos) {
+					OLED_put_pixel_(oled, start_x + x, start_y - y, pixel_color);
+					y++;
+				}
+				OLED_put_pixel_(oled, start_x + x, start_y - y, pixel_color);
+			}
+				return OLED_EOK;
+		}
+		if (delta_small == start_y - stop_y) {
+			uint8_t x = 0, y = 0;
+			for (; x < delta_big; x++) {
+				if (0 == x % line_lenght)
+					y++;
+				if (0 == (y + 1) % long_line_pos) {
+					OLED_put_pixel_(oled, start_x + x, start_y - y, pixel_color);
+					x++;
+				}
+				OLED_put_pixel_(oled, start_x + x, start_y - y, pixel_color);
+			}
+				return OLED_EOK;
+		}
+	}
+	
+}

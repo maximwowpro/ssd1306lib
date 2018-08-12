@@ -276,3 +276,10 @@ OLED_err OLED_put_pixel(OLED *oled, uint8_t x, uint8_t y, bool pixel_state);
  * (!) Notice: method is not atomic. If required, protect it with lock
  */
 OLED_err OLED_put_rectangle(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to, uint8_t y_to, enum OLED_params params);
+
+
+/* OLED_put_line() - puts a straight line at specified coordinates
+ * 
+ * (!) Notice: method is not atomic. If required, protect it with lock
+ */
+OLED_err OLED_put_line(OLED *oled, uint8_t x_from, uint8_t y_from, uint8_t x_to, uint8_t y_to, enum OLED_params params);

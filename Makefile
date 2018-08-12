@@ -1,7 +1,7 @@
 TARGET:=oled_test
 DEPS:=oled
 MCU:=atmega328p			# see avr-as --help for full list
-PROGPORT:=/dev/ttyACM0		# see ls /dev | grep tty and 99-Arduino.rules
+PROGPORT:=/dev/ttyUSB0		# see ls /dev | grep tty and 99-Arduino.rules
 
 CC=avr-gcc
 CFLAGS=-mmcu=$(MCU) -Os -std=gnu11 -Wall -Wextra -Wpedantic -Waddr-space-convert -Wmisspelled-isr # -save-temps -Werror  
